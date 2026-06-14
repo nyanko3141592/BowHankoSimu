@@ -251,8 +251,8 @@
     <div class="sec-head"><span class="no">弐 / PRINCIPLE</span><h2>歯車が、角度を語る</h2><span class="rule"></span></div>
     <div class="concept">
       <div class="ccell"><div class="gi">齒<small>teeth = rank</small></div><h3>歯数 ＝ 序列</h3><p>役職が上がるほど歯が増える。会長は重く大きく、新人は小さく軽い。組織の序列を、そのまま歯の数に刻む。</p></div>
-      <div class="ccell"><div class="gi">廻<small>rotation = bow</small></div><h3>回転 ＝ お辞儀</h3><p>印は歯車に貼り付いている。歯の多い大歯車は<span class="k">ほとんど回らず直立</span>。歯の少ない小歯車は大きく回り、深く礼をする。</p></div>
-      <div class="ccell"><div class="gi">θ<small>θ = θmax(1−tᵢ/t)</small></div><h3>一意に決まる</h3><p>垂線からの<span class="k">傾き角</span>として製図。<span class="k">θ = θmax×(1 − 自分の歯数 / 最上位の歯数)</span>。最上位は 0°、つまり傾けない。</p></div>
+      <div class="ccell"><div class="gi">鎖<small>chain drive</small></div><h3>チェーンで同方向</h3><p>印はスプロケットに貼り付いている。噛み合う歯車は逆回転してしまうので、<span class="k">チェーン</span>で連結。全員が同じ向き——上司側へ礼をする。歯が少ない者ほど速く回り、深く傾く。</p></div>
+      <div class="ccell"><div class="gi">θ<small>θ = θmax·t_min/tᵢ</small></div><h3>歯数比で決まる</h3><p>チェーン速度は一定だから、回転角は<span class="k">歯数に反比例</span>。<span class="k">θ = θmax×(最小歯数 / 自分の歯数)</span>。最も歯の少ない新人が最深（θmax）、歯の多い上位ほど浅い。</p></div>
     </div>
   </section>
 
@@ -323,6 +323,30 @@ function gearPath(teeth,rPitch){
   }
   return d+"Z";
 }
+/* ========== chain loop path（全スプロケットの外周に巻くローラーチェーン） ========== */
+function chainPath(centers,radii,cy){
+  const n=centers.length, pt=(x,y)=>`${x.toFixed(1)} ${y.toFixed(1)}`;
+  if(n===1){const r=radii[0],x=centers[0];return `M ${pt(x-r,cy)} A ${r} ${r} 0 1 1 ${pt(x+r,cy)} A ${r} ${r} 0 1 1 ${pt(x-r,cy)} Z`;}
+  const nU=[],nL=[];
+  for(let i=0;i<n-1;i++){
+    const d=centers[i+1]-centers[i];
+    let cu=(radii[i]-radii[i+1])/d; cu=Math.max(-1,Math.min(1,cu));
+    const su=Math.sqrt(1-cu*cu);
+    nU.push([cu,-su]); nL.push([cu,su]);
+  }
+  const topR=i=>[centers[i]+radii[i]*nU[i][0], cy+radii[i]*nU[i][1]];
+  const topL=i=>[centers[i]+radii[i]*nU[i-1][0], cy+radii[i]*nU[i-1][1]];
+  const botR=i=>[centers[i]+radii[i]*nL[i][0], cy+radii[i]*nL[i][1]];
+  const botL=i=>[centers[i]+radii[i]*nL[i-1][0], cy+radii[i]*nL[i-1][1]];
+  let p=topR(0), d=`M ${pt(p[0],p[1])} `;
+  for(let i=1;i<n-1;i++){const l=topL(i);d+=`L ${pt(l[0],l[1])} `;const r=topR(i);d+=`A ${radii[i]} ${radii[i]} 0 0 1 ${pt(r[0],r[1])} `;}
+  const lN=topL(n-1);d+=`L ${pt(lN[0],lN[1])} `;
+  const bN=botL(n-1);d+=`A ${radii[n-1]} ${radii[n-1]} 0 1 1 ${pt(bN[0],bN[1])} `;
+  for(let i=n-2;i>=1;i--){const rb=botR(i);d+=`L ${pt(rb[0],rb[1])} `;const lb=botL(i);d+=`A ${radii[i]} ${radii[i]} 0 0 1 ${pt(lb[0],lb[1])} `;}
+  const b0=botR(0);d+=`L ${pt(b0[0],b0[1])} `;
+  const t0=topR(0);d+=`A ${radii[0]} ${radii[0]} 0 1 1 ${pt(t0[0],t0[1])} Z`;
+  return d;
+}
 // masthead mini gear
 document.getElementById("mkgear").innerHTML=`<path d="${gearPath(16,40)}" fill="none" stroke="var(--brass)" stroke-width="3"/>`;
 
@@ -336,15 +360,11 @@ function render(){
   const radii=data.map(d=>rOf(d.teeth));
   const maxR=Math.max(...radii);
   const minT=Math.min(...data.map(d=>d.teeth));
-  // アイドラー（遊び歯車）：役職歯車の間に挟み、全役職歯車を同方向へ回す
-  const idlerT=8, rIdler=rOf(idlerT);
+  // チェーン駆動：スプロケットを間隔をあけて並べ、外周にチェーンを巻く
   const padX=Math.max(54,maxR*0.5);
-  // 役職歯車とアイドラーを軸上に交互配置（ピッチ円が接する＝噛み合う）
-  const centers=[], idlerX=[]; let cx=padX+radii[0];
-  for(let i=0;i<data.length;i++){
-    centers.push(cx);
-    if(i<data.length-1){const ix=cx+radii[i]+rIdler;idlerX.push(ix);cx=ix+rIdler+radii[i+1];}
-  }
+  const gap=32;                          // スプロケット間（チェーンの直線スパン）
+  const centers=[]; let cx=padX+radii[0];
+  for(let i=0;i<data.length;i++){centers.push(cx);if(i<data.length-1)cx+=radii[i]+gap+radii[i+1];}
   const totalW=cx+radii[radii.length-1]+padX;
   const arcR=maxR+30, baseY=arcR+58, totalH=baseY+maxR+72, sealR=24;
   stage.setAttribute("viewBox",`0 0 ${totalW.toFixed(0)} ${totalH.toFixed(0)}`);
@@ -358,16 +378,12 @@ function render(){
     <filter id="ds" x="-40%" y="-40%" width="180%" height="180%"><feDropShadow dx="0" dy="4" stdDeviation="6" flood-color="#000" flood-opacity="0.5"/></filter>
   </defs>`;
 
-  // common shaft / axle
-  const x0=centers[0]-radii[0]-12, x1=centers[centers.length-1]+radii[radii.length-1]+12;
-  svg+=`<line x1="${x0}" y1="${baseY}" x2="${x1}" y2="${baseY}" stroke="var(--brass-dim)" stroke-width="2" opacity="0.45"/>`;
-  svg+=`<circle cx="${x0}" cy="${baseY}" r="4" fill="var(--brass-dim)"/><circle cx="${x1}" cy="${baseY}" r="4" fill="var(--brass-dim)"/>`;
-  // idlers（役職歯車の下に描画）：逆回転で全役職歯車を同方向化、回転量は歯数比
-  const idlerBow=state.thetaMax*minT/idlerT, idlerPhase=180/idlerT;
-  idlerX.forEach((ix)=>{
-    const rot=idlerPhase+idlerBow*state.depth;
-    svg+=`<g transform="translate(${ix.toFixed(1)} ${baseY})"><g transform="rotate(${rot.toFixed(2)})" style="transition:transform .04s linear"><path d="${gearPath(idlerT,rIdler)}" fill="url(#iron)" stroke="var(--brass-dim)" stroke-width="1" filter="url(#ds)"/><circle r="${(rIdler*0.34).toFixed(1)}" fill="#0d0a07" stroke="var(--brass-dim)" stroke-width="0.8"/><circle r="2" fill="var(--brass-dim)"/></g></g>`;
-  });
+  // チェーン（スプロケットの背後に巻く）：全スプロケットが同方向に回る＝逆回転しない
+  const chain=chainPath(centers,radii,baseY);
+  const travel=MOD*state.thetaMax*minT*Math.PI/360;   // 全深さでチェーンが送られる距離(px)
+  svg+=`<path d="${chain}" fill="none" stroke="#0c0907" stroke-width="9.5" stroke-linejoin="round" stroke-linecap="round"/>`;
+  svg+=`<path d="${chain}" fill="none" stroke="var(--brass-dim)" stroke-width="5.5" stroke-linejoin="round" opacity="0.85"/>`;
+  svg+=`<path d="${chain}" fill="none" stroke="#0c0907" stroke-width="6" stroke-dasharray="2.4 6.4" stroke-dashoffset="${(-travel*state.depth).toFixed(1)}" stroke-linejoin="round"/>`;
 
   data.forEach((d,i)=>{
     const r=radii[i], C=centers[i];
