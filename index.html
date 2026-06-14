@@ -5,8 +5,17 @@
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>お辞儀判子 — 礼の角度、製図する</title>
 <meta name="description" content="お辞儀ハンコ、何度傾ける？ 役職を歯車に見立て、歯数から礼の角度を製図するシミュレーター。">
-<meta property="og:title" content="お辞儀判子シミュレーター">
-<meta property="og:description" content="歯車の歯数で、お辞儀ハンコの角度を製図する。">
+<meta property="og:type" content="website">
+<meta property="og:url" content="https://nyanko3141592.github.io/BowHankoSimu/">
+<meta property="og:title" content="お辞儀判子シミュレーター — 礼の角度、製図する">
+<meta property="og:description" content="お辞儀ハンコ、何度傾ける？ 役職を歯車に見立て、歯数から礼の角度を製図する。">
+<meta property="og:image" content="https://nyanko3141592.github.io/BowHankoSimu/ogp.png">
+<meta property="og:image:width" content="1200">
+<meta property="og:image:height" content="630">
+<meta name="twitter:card" content="summary_large_image">
+<meta name="twitter:title" content="お辞儀判子シミュレーター — 礼の角度、製図する">
+<meta name="twitter:description" content="お辞儀ハンコ、何度傾ける？ 役職を歯車に見立て、歯数から礼の角度を製図する。">
+<meta name="twitter:image" content="https://nyanko3141592.github.io/BowHankoSimu/ogp.png">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Shippori+Mincho+B1:wght@600;700;800&family=Zen+Old+Mincho:wght@400;500;700&family=Space+Mono:wght@400;700&display=swap" rel="stylesheet">
@@ -290,8 +299,9 @@ function decodeState(str){try{const p=JSON.parse(decodeURIComponent(atob(str)));
 /* ========== compute ========== */
 function computeAngles(){
   const teeth=state.seals.map(s=>ROLE_BY_KEY[s.role].teeth);
-  const maxTeeth=Math.max(...teeth);
-  return state.seals.map((s,i)=>{const t=teeth[i];return{...s,teeth:t,theta:state.thetaMax*(1-t/maxTeeth),isTop:t===maxTeeth};});
+  const maxTeeth=Math.max(...teeth),minTeeth=Math.min(...teeth);
+  // 噛み合う歯車の回転は歯数に反比例：歯が少ない新人ほど大きく回り深く礼。最少歯=θmax
+  return state.seals.map((s,i)=>{const t=teeth[i];return{...s,teeth:t,theta:state.thetaMax*(minTeeth/t),isTop:t===maxTeeth};});
 }
 
 /* ========== seeded rng ========== */
@@ -300,7 +310,7 @@ function mulberry32(a){return function(){a|=0;a=a+0x6D2B79F5|0;let t=Math.imul(a
 
 /* ========== gear path (machined) ========== */
 function gearPath(teeth,rPitch){
-  const rOut=rPitch*1.07,rIn=rPitch*0.90;
+  const rOut=rPitch*1.05,rIn=rPitch*0.90;
   const ta=Math.PI*2/teeth;
   const p=(r,a)=>`${(Math.cos(a)*r).toFixed(2)} ${(Math.sin(a)*r).toFixed(2)}`;
   let d="";
@@ -320,19 +330,23 @@ document.getElementById("mkgear").innerHTML=`<path d="${gearPath(16,40)}" fill="
 function render(){
   const data=computeAngles();
   const stage=document.getElementById("stage");
-  // 歯数→半径：ベース半径＋歯数比例。最下位(歯15)でも印より十分大きく、序列で拡大
-  const T_MIN=15,T_MAX=46,R_MIN=46,R_MAX=98;
-  const rOf=t=>R_MIN+(R_MAX-R_MIN)*(t-T_MIN)/(T_MAX-T_MIN);
+  // 一定モジュール → 半径∝歯数（歯の大きさが全歯車で同一＝噛み合う条件）
+  const MOD=5.5;
+  const rOf=t=>MOD*t/2;
   const radii=data.map(d=>rOf(d.teeth));
   const maxR=Math.max(...radii);
-  const gap=Math.max(10,18-data.length); const padX=Math.max(64,maxR*0.7);
-  const centers=[]; let cx=padX+radii[0];
-  for(let i=0;i<data.length;i++){if(i>0)cx+=radii[i-1]+gap+radii[i];centers.push(cx);}
+  const minT=Math.min(...data.map(d=>d.teeth));
+  // アイドラー（遊び歯車）：役職歯車の間に挟み、全役職歯車を同方向へ回す
+  const idlerT=8, rIdler=rOf(idlerT);
+  const padX=Math.max(54,maxR*0.5);
+  // 役職歯車とアイドラーを軸上に交互配置（ピッチ円が接する＝噛み合う）
+  const centers=[], idlerX=[]; let cx=padX+radii[0];
+  for(let i=0;i<data.length;i++){
+    centers.push(cx);
+    if(i<data.length-1){const ix=cx+radii[i]+rIdler;idlerX.push(ix);cx=ix+rIdler+radii[i+1];}
+  }
   const totalW=cx+radii[radii.length-1]+padX;
-  const arcR=maxR+34;
-  const baseY=arcR+62;                       // room above for plumb+arc+label
-  const totalH=baseY+maxR+70;
-  const sealR=24;                            // 印は全員同寸（実物のハンコは同サイズ。歯車はあくまで序列の抽象）
+  const arcR=maxR+30, baseY=arcR+58, totalH=baseY+maxR+72, sealR=24;
   stage.setAttribute("viewBox",`0 0 ${totalW.toFixed(0)} ${totalH.toFixed(0)}`);
 
   let svg=`<defs>
@@ -345,9 +359,15 @@ function render(){
   </defs>`;
 
   // common shaft / axle
-  const x0=centers[0]-radii[0]-14, x1=centers[centers.length-1]+radii[radii.length-1]+14;
-  svg+=`<line x1="${x0}" y1="${baseY}" x2="${x1}" y2="${baseY}" stroke="var(--brass-dim)" stroke-width="2" opacity="0.5"/>`;
+  const x0=centers[0]-radii[0]-12, x1=centers[centers.length-1]+radii[radii.length-1]+12;
+  svg+=`<line x1="${x0}" y1="${baseY}" x2="${x1}" y2="${baseY}" stroke="var(--brass-dim)" stroke-width="2" opacity="0.45"/>`;
   svg+=`<circle cx="${x0}" cy="${baseY}" r="4" fill="var(--brass-dim)"/><circle cx="${x1}" cy="${baseY}" r="4" fill="var(--brass-dim)"/>`;
+  // idlers（役職歯車の下に描画）：逆回転で全役職歯車を同方向化、回転量は歯数比
+  const idlerBow=state.thetaMax*minT/idlerT, idlerPhase=180/idlerT;
+  idlerX.forEach((ix)=>{
+    const rot=idlerPhase+idlerBow*state.depth;
+    svg+=`<g transform="translate(${ix.toFixed(1)} ${baseY})"><g transform="rotate(${rot.toFixed(2)})" style="transition:transform .04s linear"><path d="${gearPath(idlerT,rIdler)}" fill="url(#iron)" stroke="var(--brass-dim)" stroke-width="1" filter="url(#ds)"/><circle r="${(rIdler*0.34).toFixed(1)}" fill="#0d0a07" stroke="var(--brass-dim)" stroke-width="0.8"/><circle r="2" fill="var(--brass-dim)"/></g></g>`;
+  });
 
   data.forEach((d,i)=>{
     const r=radii[i], C=centers[i];
